@@ -108,7 +108,7 @@ have remote bookmarks, they will be immutable by default — use `--ignore-immut
 to override.
 
 **IMPORTANT**: Before squashing commits with remote bookmarks, track all affected
-bookmarks first (`jj bookmark track <name> --remote=origin`). Otherwise, pushing
+bookmarks first (`jj bookmark track <name>@origin`). Otherwise, pushing
 later creates divergent change IDs that are painful to clean up.
 
 ## Working with Bookmarks (Branches)
@@ -121,7 +121,7 @@ jj bookmark move my-feature --to <change-id>  # Move to different commit
 jj bookmark list                           # List bookmarks
 jj bookmark list --tracked                 # List tracked bookmarks only
 jj bookmark delete my-feature              # Delete bookmark
-jj bookmark track my-feature --remote=origin   # Track a remote bookmark
+jj bookmark track my-feature@origin             # Track a remote bookmark
 jj bookmark set my-feature -r <commit-hash>    # Set bookmark to specific commit
 ```
 
@@ -135,7 +135,7 @@ remote bookmarks correspond, and later tracking creates divergent change IDs.
 
 ```bash
 # Track before rewriting
-jj bookmark track my-feature --remote=origin
+jj bookmark track my-feature@origin
 
 # After rewriting and tracking, push all tracked bookmarks at once
 jj git push --tracked
@@ -186,6 +186,7 @@ jj allows committing conflicts — resolve them later. Do not use `jj resolve` (
 | Create bookmark | `jj bookmark create <name>` |
 | Move bookmark | `jj bookmark move <name> --to @` |
 | Push bookmark | `jj git push -b <name>` |
+| Track bookmark | `jj bookmark track <name>@origin` |
 | Rebase onto | `jj rebase -d <destination>` |
 
 ## Best Practices
