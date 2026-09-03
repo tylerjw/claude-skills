@@ -1,0 +1,14 @@
+[Unit]
+Description=Robot agent ({{ robot_id }})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=robot
+Group=robot
+ExecStart={{ options.prefix }}/bin/robot-agent --config {{ options.prefix }}/etc/robot.toml
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

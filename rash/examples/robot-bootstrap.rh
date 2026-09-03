@@ -1,0 +1,110 @@
+#!/usr/bin/env -S rash --
+#
+# Bring a robot controller to a known software environment.
+# Run as root:  sudo ./robot-bootstrap.rh --fleet=lab amr-07
+# Dry run:      sudo rash --check --diff robot-bootstrap.rh -- --fleet=lab amr-07
+#
+# Usage:
+#   robot-bootstrap.rh [options] <robot-id>
+#
+# Options:
+#   --fleet=NAME      fleet the robot belongs to [default: lab]
+#   --prefix=DIR      install prefix [default: /opt/robot]
+#   --skip-packages   do not touch apt
+
+tasks:
+  - name: Validate inputs
+    assert:
+      that:
+        - robot_id is defined
+        - robot_id | length > 0
+        - rash.user.uid == 0 or rash.check_mode
+
+  - name: Detect systemd
+    stat:
+      path: /run/systemd/system
+    register: systemd_dir
+
+  - name: Load site secrets if present
+    stat:
+      path: /etc/robot/.env
+    register: site_env
+
+  - setup:
+      from: [/etc/robot/.env]
+    when: site_env.extra.stat.exists
+
+  # useradd creates the same-named group; a `group:` param would re-run usermod every time
+  - name: Service user
+    user:
+      name: robot
+      system: true
+      shell: /usr/sbin/nologin
+      create_home: false
+      comment: robot runtime
+
+  - name: Directories
+    file:
+      path: "{{ item }}"
+      state: directory
+      mode: "0755"
+    loop:
+      - "{{ options.prefix }}"
+      - "{{ options.prefix }}/bin"
+      - "{{ options.prefix }}/etc"
+      - /var/log/robot
+
+  - name: Base packages
+    apt:
+      name: [curl, jq, chrony]
+      update_cache: true
+      cache_valid_time: 86400
+    when: not options.skip_packages
+
+  - name: Robot config
+    template:
+      src: "{{ rash.dir }}/templates/robot.toml.j2"
+      dest: "{{ options.prefix }}/etc/robot.toml"
+      mode: "0644"
+    vars:
+      fleet: "{{ options.fleet }}"
+      log_level: "{{ env.ROBOT_LOG_LEVEL | default('info') }}"
+    notify: restart robot-agent
+
+  - name: Controller alias in /etc/hosts
+    lineinfile:
+      path: /etc/hosts
+      regexp: '\s+robot-ctrl$'
+      line: "{{ env.ROBOT_CTRL_IP | default('10.0.0.5') }} robot-ctrl"
+
+  - name: Kernel tuning
+    sysctl:
+      name: net.core.rmem_max
+      value: "26214400"
+      sysctl_file: /etc/sysctl.d/90-robot.conf
+
+  - name: systemd unit
+    template:
+      src: "{{ rash.dir }}/templates/robot-agent.service.j2"
+      dest: /etc/systemd/system/robot-agent.service
+      mode: "0644"
+    notify: restart robot-agent
+    when: systemd_dir.extra.stat.exists
+
+  - name: Enable service
+    systemd:
+      name: robot-agent
+      enabled: true
+      daemon_reload: true
+    when: systemd_dir.extra.stat.exists and not rash.check_mode
+
+  - name: Summary
+    debug:
+      msg: "{{ robot_id }} in fleet {{ options.fleet }} configured under {{ options.prefix }}"
+
+handlers:
+  - name: restart robot-agent
+    systemd:
+      name: robot-agent
+      state: restarted
+    when: systemd_dir.extra.stat.exists and not rash.check_mode
