@@ -91,8 +91,10 @@ rash [OPTIONS] script.rh -- <script args>
 Exit code is 0 on success and 1 on any failure: failed task, failed assert, undefined variable,
 YAML error, bad script args, and also `--help` (help is printed as `[ERROR]`, rc 1).
 
-Development loop: `rash --check --diff x.rh` → `rash x.rh` → `rash x.rh` again and confirm
-every task prints `ok`, not `changed`. The second run is the idempotency test.
+Development loop: `rash x.rh` → `rash x.rh` again and confirm every task prints `ok`,
+not `changed`. The second run is the idempotency test, and it is the check that matters.
+`--check --diff` previews `copy`/`template` diffs usefully, but see gotcha 19 before
+trusting it on anything that reads state to make a decision.
 
 ## Task keywords (complete list)
 
@@ -132,7 +134,7 @@ MiniJinja (`{{ }}`, `{% %}`), strict undefined. Context:
   flags → `false`). Options must be passed **before** positionals on the command line, and
   `[options]` must be the first element of the usage pattern.
 - Lookups (functions): `file(path)`, `find({'paths': ..., 'patterns': [...]})`,
-  `pipe('cmd')` (shell, cwd = script dir), `password(path, length=, chars=, seed=)`,
+  `pipe('cmd')` (shell, cwd = script dir; the only fact source that works under `--check`, see gotcha 19), `password(path, length=, chars=, seed=)`,
   `passwordstore(...)`, `vault(...)`. Plus MiniJinja `range`, `dict`, `namespace`.
 - `omit`: `mode: "{{ env.MODE | default(omit) }}"` drops the param entirely.
 - `debug()` dumps the whole context **including every environment variable** (tokens, passwords).
@@ -248,6 +250,22 @@ If order matters, flush explicitly between them or fold the steps into one handl
     `(skipped_task | default({})).changed | default(false)`.
 18. `copy` has no `validate` parameter (Ansible's does). Validate a rendered config
     in a separate task before whatever consumes it restarts.
+19. **`--check` is not trustworthy for a script that reads state to decide.** A
+    `command`/`shell` task under `--check` does not run; its register becomes a
+    `{"Would run": "..."}` placeholder, so any value derived from it is garbage and
+    any `when` gated on it is wrong. `check_mode: false` does **not** force real
+    execution (unlike Ansible). Derive facts with `pipe()` instead, which executes
+    in both modes. Even then some conditions still evaluate differently under
+    `--check` and preview changes a real run skips, so prefer converging twice and
+    asserting the run is a no-op.
+20. `until` is evaluated **even when `when` skips the task**, so its `register` can
+    be undefined and a wait loop burns its full `retries * delay` budget under
+    `--check`. Make the condition trivially true there:
+    `until: rash.check_mode or (...)`.
+21. `pipe()` **type-coerces** its result: a numeric-looking output becomes a number,
+    so `| length` fails with "cannot calculate length of value of type number".
+    Cast first: `pipe('...') | string | length`. Empty output is `""`, not `none`
+    (unlike a `command` register).
 
 ## Patterns
 
